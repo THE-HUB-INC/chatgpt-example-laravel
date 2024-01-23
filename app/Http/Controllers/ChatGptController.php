@@ -59,6 +59,46 @@ class ChatGptController extends Controller
         }
     }
 
+    /**
+     * ChatGPT API呼び出し
+     * ライブラリ
+     */
+    function chat_gpt_vision($system, $image)
+    {
+        // パラメータ
+        $data = array(
+            "model" => "gpt-4-vision-preview",
+            "messages" => [
+                [
+                    "role" => "user",
+                    'content' => [
+                        ['type' => 'text', 'text' => $system],
+                        ['type' => 'image_url', 'image_url' => ['url' => "data:image/jpeg;base64," . $image]]
+                    ]
+                ]
+            ],
+            "max_tokens" => 300,
+        );
+
+        $ch = curl_init('https://api.openai.com/v1/chat/completions');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . env('CHAT_GPT_KEY'),
+        ]);
+
+        $response = curl_exec($ch);
+        curl_close($ch);
+
+        $decode = json_decode($response, true);
+        $content = $decode['choices'][0]['message']['content'];
+        $decode_content = json_decode('"' . $content . '"');
+
+        return $decode_content;
+    }
+
     function whisper_speech_to_text($audioFilePath)
     {
         try {
@@ -87,27 +127,37 @@ class ChatGptController extends Controller
     public function chat(Request $request)
     {
         // バリデーション
-        $request->validate([
-            'sentence' => 'required',
-            'audioFile' => 'file|mimes:wav,mp3',
-        ]);
+        // $request->validate([
+        //     'sentence' => 'required',
+        //     'audioFile' => 'file|mimes:wav,mp3',
+        // ]);
 
         // 音声ファイルを取得
-        if($request->hasFile('audioFile'))
-        {
-            $audioFile = $request->file('audioFile');
-            // publicディレクトリ内の'uploads'フォルダに保存
+        // if($request->hasFile('audioFile'))
+        // {
+        //     $audioFile = $request->file('audioFile');
+        //     // publicディレクトリ内の'uploads'フォルダに保存
+        //     $destinationPath = 'uploads';
+        //     $audioFile->move($destinationPath, $audioFile->getClientOriginalName());
+        //     $audioFilePath = '/var/www/html/public/uploads/' . $audioFile->getClientOriginalName();
+        //     $sentence = $this->whisper_speech_to_text($audioFilePath);
+        // } else {
+        //     $sentence = $request->sentence;
+        // }
+
+        // encodeしてrequestから画像を取
+        if ($request->hasFile('image')) {
+            $image = $request->file('image');
             $destinationPath = 'uploads';
-            $audioFile->move($destinationPath, $audioFile->getClientOriginalName());
-            $audioFilePath = '/var/www/html/public/uploads/' . $audioFile->getClientOriginalName();
-            $sentence = $this->whisper_speech_to_text($audioFilePath);
+            $image->move($destinationPath, $image->getClientOriginalName());
+            $imageFilePath = '/var/www/html/public/uploads/' . $image->getClientOriginalName();
+            $content = base64_encode(file_get_contents($imageFilePath));
         } else {
-            $sentence = $request->sentence;
-        }
-
+            $content = "";
+        } 
         // ChatGPT API処理
-        $chat_response = $this->chat_gpt("テキストを英語にしてください", $sentence);
+        $chat_response = $this->chat_gpt_vision("画像に何が映っているか教えてください。", $content);
 
-        return view('chat', compact('sentence', 'chat_response'));
+        return view('chat', compact('chat_response'));
     }
 }

@@ -11,8 +11,8 @@
     <form method="POST" enctype="multipart/form-data">
         @csrf
         {{-- <textarea rows="10" cols="50" name="sentence">{{ isset($sentence) ? $sentence : '' }}</textarea> --}}
-        {{-- 音声ファイルを入力してください --}}
-        <input type="file" name="audioFile" accept="audio/*" />
+        {{-- 画像ファイルを入力してください --}}
+        <input type="file" name="image" accept="image/png, image/jpeg">
         <button type="submit">ChatGPT</button>
     </form>
     @if ($errors->any())
