@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
-class User extends Model
+class Skill extends Model
 {
     /**
      * The attributes that are mass assignable.
@@ -12,9 +12,4 @@ class User extends Model
      * @var array<int, string>
      */
     protected $guarded = [];
-
-    public function skills()
-    {
-        return $this->belongsToMany(Skill::class);
-    }
 }

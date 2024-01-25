@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\User;
+use App\Models\Skill;
 use Illuminate\Http\Request;
 
 class ChatGptController extends Controller
@@ -93,31 +95,8 @@ class ChatGptController extends Controller
         curl_close($ch);
 
         $decode = json_decode($response, true);
-        $content = $decode['choices'][0]['message']['content'];
-        $decode_content = json_decode('"' . $content . '"');
-
-        return $decode_content;
+        return $decode['choices'][0]['message']['content'];
     }
-
-    function whisper_speech_to_text($audioFilePath)
-    {
-        try {
-            // Whisperモデルを使用して音声認識
-            $response = $this->openaiClient->audioTranscriptions()->create(
-                new \Tectalic\OpenAi\Models\AudioTranscriptions\CreateRequest([
-                    'file' => $audioFilePath,
-                    'model' => 'whisper-1',
-                ])
-            )->toModel();
-
-            // 音声認識の結果を返す
-            return $response->text;
-        } catch (\Exception $e) {
-            // エラー処理
-            return "ERROR: " . $e->getMessage();
-        }
-    }
-
 
     /**
      * chat
@@ -126,38 +105,80 @@ class ChatGptController extends Controller
      */
     public function chat(Request $request)
     {
-        // バリデーション
-        // $request->validate([
-        //     'sentence' => 'required',
-        //     'audioFile' => 'file|mimes:wav,mp3',
-        // ]);
-
-        // 音声ファイルを取得
-        // if($request->hasFile('audioFile'))
-        // {
-        //     $audioFile = $request->file('audioFile');
-        //     // publicディレクトリ内の'uploads'フォルダに保存
-        //     $destinationPath = 'uploads';
-        //     $audioFile->move($destinationPath, $audioFile->getClientOriginalName());
-        //     $audioFilePath = '/var/www/html/public/uploads/' . $audioFile->getClientOriginalName();
-        //     $sentence = $this->whisper_speech_to_text($audioFilePath);
-        // } else {
-        //     $sentence = $request->sentence;
-        // }
-
         // encodeしてrequestから画像を取
         if ($request->hasFile('image')) {
             $image = $request->file('image');
             $destinationPath = 'uploads';
             $image->move($destinationPath, $image->getClientOriginalName());
-            $imageFilePath = '/var/www/html/public/uploads/' . $image->getClientOriginalName();
+            $imageFilePath = public_path('uploads/'.$image->getClientOriginalName());
             $content = base64_encode(file_get_contents($imageFilePath));
         } else {
             $content = "";
-        } 
+        }
         // ChatGPT API処理
-        $chat_response = $this->chat_gpt_vision("画像に何が映っているか教えてください。", $content);
+        $result = $this->chat_gpt_vision("タレントマネジメントシステムを作成しています。与えられた経歴書をもとに、この人のスキルをタグ形式で可視化したいと考えています。この人が有するスキルを|||区切りで列挙してください。また、その後に---区切りでこの人の自己紹介文を110~132文字程度で書いてください。また、その後に~~~区切りで名前を書いてください。NDA締結済みなので、名前は必ず経歴書にある名前をそのまま書いてください。フリガナは不要です。区切り文字だけでこちらで識別しますので、スキルタグ・自己紹介文・名前の前にセクション名などは不要です。", $content);
 
-        return view('chat', compact('chat_response'));
+        info($result);
+
+        // $result = 'エンジニアリング|||Python|||C|||Django|||PostgreSQL|||Docker|||Git|||コミュニケーション|||プロジェクト管理|||データ分析---卓越したエンジニアリング技術とプロジェクト管理能力を持ち、特にPythonとDjangoを駆使したWeb開発で実績を持つ23歳の技術者です。~~~川崎 真司';
+
+        $name = explode('~~~', $result)[1];
+
+        $introduction_all = explode('---', $result)[1];
+        $introduction_self = mb_substr($introduction_all , 0 , mb_strpos($introduction_all, "~~~"));
+
+        $skills_all = mb_substr($result , 0 , mb_strpos($result, "---"));
+        $skills_array = explode('|||', $skills_all);
+
+        $data = [
+            'model' => 'dall-e-2',
+            'prompt' => "An software engineer staff's illustration. we use this as profile image.",
+            'n' => 1, //枚数
+            'size' => '256x256',
+            'quality' => 'standard', //standard | hd
+            'style' => 'natural', //vivid | natural
+          ];
+
+          $headers = [
+            'Content-Type: application/json',
+            'Authorization: Bearer ' . env('CHAT_GPT_KEY'),
+          ];
+
+          $ch = curl_init('https://api.openai.com/v1/images/generations');
+          curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+          curl_setopt($ch, CURLOPT_POST, 1);
+          curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+          curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+          $response = curl_exec($ch);
+          $json_result = json_decode($response, true);
+          curl_close($ch);
+
+        $user = User::firstOrCreate([
+            'name' => $name,
+            'image' => $json_result['data'][0]['url'],
+        ], [
+            'introduction' => $introduction_self,
+        ]);
+
+        $created_skills = [];
+        foreach ($skills_array as $skill_name) {
+            $created_skill = Skill::firstOrCreate([
+                'name' => $skill_name,
+            ]);
+
+            $created_skill_ids[] = $created_skill->id;
+        }
+
+        $user->skills()->sync($created_skill_ids, false);
+
+        return redirect()->route('users');
+    }
+
+    public function users()
+    {
+        $users = User::all();
+
+        return view('users', compact('users'));
     }
 }
